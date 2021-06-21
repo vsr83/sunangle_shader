@@ -1,0 +1,22 @@
+/* The sidebar menu */
+
+table, th, td, tr {
+    font-size: 15px;
+}
+.openbutton:hover, .closebutton:hover {
+    background-color: #444;
+  }
+
+#main {
+    position: absolute;
+    top: 0px;
+    transition: margin-left .5s; 
+    padding: 0px;
+}
+
+#container {
+  position: absolute;
+  top: 0px;
+  transition: margin-left .5s; 
+  padding: 0px;
+}

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Daylight</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+    <link rel="stylesheet" href="app.css">
+</head>
+<body style="background: black; color: white; overflow-y: hidden; overflow-x: hidden">
+
+    <div id="container"></div>
+
+    <script src="three.min.js"></script>
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        void main()
+        {
+            //gl_Position = vec4(position, 1.0);
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        #define PI 3.1415926538
+
+        uniform sampler2D texture_day;
+        uniform sampler2D texture_night;
+        uniform vec2 u_resolution;
+
+        uniform float decl;
+        uniform float rA;
+        uniform float LST;
+
+        varying vec2 vUv;
+
+        float deg2rad(in float deg)
+        {
+            return 2.0 * PI * deg / 360.0; 
+        }
+
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            vec2 uv = fragCoord / u_resolution.xy;
+
+            float longitude = (uv.x * 360.0) - 180.0;
+            float latitude = (uv.y * 180.0) - 90.0;
+
+            float LSTlon = LST + longitude;
+
+            float h = deg2rad(LSTlon) - rA;
+
+            float altitude = asin(cos(h)*cos(decl)*cos(deg2rad(latitude)) + sin(decl)*sin(deg2rad(latitude)));
+
+            altitude = 360.0 * altitude / (2.0 * PI);
+
+            if (altitude > 0.0)
+            {
+                fragColor = texture2D(texture_day, uv);
+            }
+            else if (altitude > -6.0)
+            {
+                fragColor = (0.5*texture2D(texture_night, uv) + 1.5*texture2D(texture_day, uv)) * 0.5;
+            }
+            else if (altitude > -12.0)
+            {
+                fragColor = (texture2D(texture_night, uv) + texture2D(texture_day, uv)) * 0.5;
+            }
+            else if (altitude > -18.0)
+            {
+                fragColor = (1.5*texture2D(texture_night, uv) + 0.5*texture2D(texture_day, uv)) * 0.5;
+            }
+            else
+            {
+                fragColor = texture2D(texture_night, uv);
+            }
+        }
+
+        void main()
+        {
+            mainImage(gl_FragColor, gl_FragCoord.xy);
+        }
+    </script>
+
+
+    <script src="computation/Coordinates.js"></script>
+    <script src="computation/TimeConversions.js"></script>
+    <script src="computation/Orbits.js"></script>
+    <script src="computation/SunAltitude.js"></script>
+    <script src="dat.gui.min.js"></script>
+
+    <script>
+        var container;
+        var camera, scene, renderer;
+        var uniforms;
+
+        var guiControls = null;
+        var gui = null;
+        var sunMesh = null;
+        var grid = null;
+        var texture1 = null;
+
+        var meshText = null;
+        var textureCanvas = null;
+
+        init();
+        animate();
+
+        function lonToX(lon)
+        {
+            return lon / 180.0;
+        }
+
+        function latToY(lat)
+        {
+            return lat / 90.0;
+        }
+
+        function init()
+        {
+            guiControls = new function()
+            {
+                //this.preset = "Start";
+                this.enableGrid = false;
+                this.gridLonResolution = 30;
+                this.gridLatResolution = 30;
+                this.enableSun = false;
+                this.displayTwilight = true;
+                this.deltaDays = 0;
+                this.deltaHours = 0;
+                this.deltaMins = 0;
+            }
+
+            gui = new dat.GUI();
+            let displayFolder = gui.addFolder('Display');
+            displayFolder.add(guiControls, 'enableGrid')
+            .onChange(function() {
+                grid.visible = guiControls.enableGrid;
+            });
+            let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1);
+            let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1);
+            displayFolder.add(guiControls, 'enableSun')
+            .onChange(function() {
+                sunMesh.visible = guiControls.enableSun;
+            });
+            
+            let deltaFolder = gui.addFolder('DeltaTime');
+            let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1);
+            let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1);
+            let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1);
+
+            container = document.getElementById('container');
+
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 10.0);
+            camera.position.x = 0;
+            camera.position.y = 0;
+            camera.position.z = 1;
+            scene = new THREE.Scene();
+
+            var geometry = new THREE.PlaneBufferGeometry(2.0, 2.0, 1, 1);
+
+            uniforms = 
+            {
+                texture_day: { type: "t", value: THREE.ImageUtils.loadTexture( "textures/2k_earth_daymap.jpg" ) },
+                texture_night: { type: "t", value: THREE.ImageUtils.loadTexture( "textures/2k_earth_nightmap.jpg" ) },
+                u_resolution : {type : "v2", value : new THREE.Vector2()},
+                u_mouse : {type : "v2", value : new THREE.Vector2()},
+                rA : {type : "f", value : 1.0}, 
+                decl : {type : "f", value : 1.0}, 
+                LST : {type : "f", value : 1.0}
+            };
+
+            var material = new THREE.ShaderMaterial( {
+                uniforms : uniforms,
+                vertexShader : document.getElementById('vertexShader').textContent,
+                fragmentShader : document.getElementById('fragmentShader').textContent
+            });
+
+            var mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            const lineMaterial = new THREE.LineBasicMaterial({color: 0x999999});
+            const points = [];
+
+            for (var lon = -180; lon <= 180.0; lon += guiControls.gridLonResolution)
+            {
+                var x = lonToX(lon);
+
+                points.push(new THREE.Vector3(x, -1, 0.01));
+                points.push(new THREE.Vector3(x, 1, 0.01));
+                points.push(new THREE.Vector3(x, -1, 0.01));
+            }
+            for (var lat = -90; lat <= 90.0; lat += guiControls.gridLatResolution)
+            {
+                var y = latToY(lat);
+
+                points.push(new THREE.Vector3(-1, y, 0.01));
+                points.push(new THREE.Vector3(1, y, 0.01));
+                points.push(new THREE.Vector3(-1, y, 0.01));
+            }
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            grid = new THREE.Line(lineGeometry, lineMaterial);
+            grid.visible = guiControls.enableGrid;
+            scene.add(grid);
+
+            const radius = 1;
+            const widthSegments = 6;
+            const heightSegments = 6;
+            const sphereGeometry = new THREE.SphereGeometry(
+                radius, widthSegments, heightSegments);
+
+            const sunMaterial = new THREE.MeshPhongMaterial({emissive: 0xFFFF00});
+            sunMesh = new THREE.Mesh(sphereGeometry, sunMaterial);
+            sunMesh.scale.set(0.05,0.05,0.1);
+            sunMesh.visible = guiControls.enableSun;
+            scene.add(sunMesh);
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            container.appendChild(renderer.domElement);
+
+            onWindowResize();
+            window.addEventListener('resize', onWindowResize, false);
+
+            document.onmousemove = function(e) 
+            {
+                uniforms.u_mouse.value.x = e.pageX;
+                uniforms.u_mouse.value.y = e.pageY;
+            }
+
+            // Create canvas texture for the
+            textureCanvas = document.createElement('canvas');
+            textureCanvas.width = 500;
+            textureCanvas.height = 40;
+
+            texture1 = new THREE.Texture(textureCanvas);
+            texture1.needsUpdate = true;
+            var material1 = new THREE.MeshBasicMaterial( { map: texture1, side:THREE.DoubleSide } );
+            material1.transparent = true;
+            meshText = new THREE.Mesh(
+                    new THREE.PlaneGeometry(0.75, 0.125 ),
+                    material1
+            );
+
+            scene.add( meshText );
+ 
+            dayControl.onChange(update());
+            hourControl.onChange(update());
+            minuteControl.onChange(update());
+
+            lonControl.onChange(updateGrid());
+            latControl.onChange(updateGrid());
+        }
+
+        function updateGrid()
+        {
+            // TODO:
+        }
+
+        function onWindowResize(event)
+        {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            uniforms.u_resolution.value.x = renderer.domElement.width;
+            uniforms.u_resolution.value.y = renderer.domElement.height;
+        }
+
+        function animate() 
+        {
+            requestAnimationFrame(animate);
+            render();
+        }
+
+        function render()
+        {
+            //deltaMins += 1;
+            update();
+            renderer.render(scene, camera);
+        }
+
+        /**
+         * Map angle to the interval [0, 2*pi].
+         *  
+         * @param {*} rad 
+         *     The angle (in radians).
+         * @returns The mapped angle.
+         */
+        function limitAngle(rad)
+        {
+            var interval = 2 * Math.PI;
+            if (rad < 0)
+            {
+                rad += (1 + Math.floor(-rad / interval)) * interval;
+            }
+            else
+            {
+                rad = rad % interval;
+            }
+            return rad;
+        }
+
+        /**
+         * Redraw the map and the contour according to the Sun altitude.
+         * 
+         */
+        function update()
+        {
+            // Get height of the time label.
+            //var timeLabel = document.getElementById("timeLabel");
+            //var timeHeight = timeLabel.getBoundingClientRect().height;
+            //console.log(timeHeight);
+
+            // Adjust the canvas height according to the body size and the height of the time label.
+            var container = document.getElementById("container");
+            var body = document.getElementsByTagName('body')[0];
+            container.width = document.documentElement.clientWidth;
+            container.height = document.documentElement.clientHeight;
+
+            // Compute Julian time.
+            var today = new Date(new Date().getTime() 
+            + 24 * 3600 * 1000 * guiControls.deltaDays
+            + 3600 * 1000 * guiControls.deltaHours
+            + 60 * 1000 * guiControls.deltaMins);
+
+            julianTimes = TimeConversions.computeJulianTime(today);
+            JD = julianTimes.JD;
+            JT = julianTimes.JT;
+            JDref = Math.ceil(TimeConversions.computeJulianDay(2000, 1, 1));
+
+            // Compute equitorial coordinates of the Sun.
+            var sunAltitude = new SunAltitude();
+            var eqCoords = sunAltitude.computeEquitorial(JT);
+            var rA = eqCoords.rA;
+            var decl = eqCoords.decl;
+
+            // Compute sidereal time perform modulo to avoid floating point accuracy issues with 32-bit
+            // floats in the shader:
+            var LST = TimeConversions.computeSiderealTime(0, JD, JT) % 360.0;
+
+            //console.log("Right Ascension : " + Coordinates.rad2Deg(rA) + " deg ");
+            //console.log("Declination     : " + Coordinates.rad2Deg(decl) + " deg");
+            
+            uniforms.rA.value = rA;
+            uniforms.decl.value = decl;
+            uniforms.LST.value = LST;
+
+            lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
+            sunMesh.position.x = (lonlat.lon) / 180.0;
+            sunMesh.position.y = (lonlat.lat) / 90.0;
+
+            var textureContext = textureCanvas.getContext('2d');
+            textureContext.clearRect(0, 0, textureCanvas.width, textureCanvas.height);
+            textureContext.font = "Bold 10px Arial";
+            textureContext.fillStyle = "rgba(0.5,0.5,0.5,0.95)";
+
+            textureContext.rect(0, 0, 500, 40);
+            textureContext.fillStyle = "#ffffff";
+            textureContext.fill();
+            textureContext.fillStyle = "#000000";
+
+            textureContext.fillText("Local: " + today.toString(), 10, 11);
+            textureContext.fillText("UTC: " + today.toUTCString(), 10, 23);
+            textureContext.fillText("Julian: " + JT, 10, 35);
+
+            //texture1 = new THREE.Texture(textureCanvas);
+            texture1.needsUpdate = true;
+            //meshText.scale.set(0.75, 0.125);
+
+            const aspectRatio = container.width/container.height;
+            meshText.position.set(0 , 0.90, 0.5 );
+            meshText.scale.set(1.6/aspectRatio, 1.0);
+
+            console.log(window.width);
+        }
+    </script>
+</body>
+</html>
