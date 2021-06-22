@@ -15,7 +15,6 @@
         varying vec2 vUv;
         void main()
         {
-            //gl_Position = vec4(position, 1.0);
             vUv = uv;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -39,43 +38,59 @@
             return 2.0 * PI * deg / 360.0; 
         }
 
+        float rad2deg(in float rad)
+        {
+            return 360.0 * rad / (2.0 * PI);
+        }
+
         void mainImage(out vec4 fragColor, in vec2 fragCoord)
         {
+            // Transform coordinates to the range [-1, 1] x [-1, 1].
             vec2 uv = fragCoord / u_resolution.xy;
 
+            // Transform to longitude and latitude.
             float longitude = (uv.x * 360.0) - 180.0;
             float latitude = (uv.y * 180.0) - 90.0;
 
+            // Compute the sidereal time for the given longitude.
             float LSTlon = LST + longitude;
 
+            // Hour angle.
             float h = deg2rad(LSTlon) - rA;
 
+            // Perform transformation from Equitorial coordinate system to the horizontal coordinate system 
+            // and convert to degrees from radians.
             float altitude = asin(cos(h)*cos(decl)*cos(deg2rad(latitude)) + sin(decl)*sin(deg2rad(latitude)));
-
-            altitude = 360.0 * altitude / (2.0 * PI);
+            altitude = rad2deg(altitude);
 
             if (altitude > 0.0)
             {
+                // Day. 
                 fragColor = texture2D(texture_day, uv);
             }
             else if (altitude > -6.0)
             {
+                // Civil twilight.
                 fragColor = (0.5*texture2D(texture_night, uv) + 1.5*texture2D(texture_day, uv)) * 0.5;
             }
             else if (altitude > -12.0)
             {
+                // Nautical twilight.
                 fragColor = (texture2D(texture_night, uv) + texture2D(texture_day, uv)) * 0.5;
             }
             else if (altitude > -18.0)
             {
+                // Astronomical twilight.
                 fragColor = (1.5*texture2D(texture_night, uv) + 0.5*texture2D(texture_day, uv)) * 0.5;
             }
             else
             {
+                // Night.
                 fragColor = texture2D(texture_night, uv);
             }
         }
 
+        // 
         void main()
         {
             mainImage(gl_FragColor, gl_FragCoord.xy);
@@ -137,8 +152,8 @@
             .onChange(function() {
                 grid.visible = guiControls.enableGrid;
             });
-            let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1);
-            let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1);
+            // let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1);
+            // let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1);
             displayFolder.add(guiControls, 'enableSun')
             .onChange(function() {
                 sunMesh.visible = guiControls.enableSun;
@@ -179,6 +194,7 @@
             var mesh = new THREE.Mesh(geometry, material);
             scene.add(mesh);
 
+            // Create grid:
             const lineMaterial = new THREE.LineBasicMaterial({color: 0x999999});
             const points = [];
 
@@ -203,6 +219,8 @@
             grid.visible = guiControls.enableGrid;
             scene.add(grid);
 
+
+            // Create Sun.
             const radius = 1;
             const widthSegments = 6;
             const heightSegments = 6;
@@ -231,8 +249,8 @@
 
             // Create canvas texture for the
             textureCanvas = document.createElement('canvas');
-            textureCanvas.width = 500;
-            textureCanvas.height = 40;
+            textureCanvas.width = 1000;
+            textureCanvas.height = 80;
 
             texture1 = new THREE.Texture(textureCanvas);
             texture1.needsUpdate = true;
@@ -249,8 +267,8 @@
             hourControl.onChange(update());
             minuteControl.onChange(update());
 
-            lonControl.onChange(updateGrid());
-            latControl.onChange(updateGrid());
+            //lonControl.onChange(updateGrid());
+            //latControl.onChange(updateGrid());
         }
 
         function updateGrid()
@@ -344,23 +362,19 @@
             uniforms.decl.value = decl;
             uniforms.LST.value = LST;
 
-            lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
-            sunMesh.position.x = (lonlat.lon) / 180.0;
-            sunMesh.position.y = (lonlat.lat) / 90.0;
-
             var textureContext = textureCanvas.getContext('2d');
             textureContext.clearRect(0, 0, textureCanvas.width, textureCanvas.height);
-            textureContext.font = "Bold 10px Arial";
+            textureContext.font = "Bold 20px Arial";
             textureContext.fillStyle = "rgba(0.5,0.5,0.5,0.95)";
 
-            textureContext.rect(0, 0, 500, 40);
+            textureContext.rect(0, 0, 1000, 80);
             textureContext.fillStyle = "#ffffff";
             textureContext.fill();
             textureContext.fillStyle = "#000000";
 
-            textureContext.fillText("Local: " + today.toString(), 10, 11);
-            textureContext.fillText("UTC: " + today.toUTCString(), 10, 23);
-            textureContext.fillText("Julian: " + JT, 10, 35);
+            textureContext.fillText("Local: " + today.toString(), 20, 22);
+            textureContext.fillText("UTC: " + today.toUTCString(), 20, 46);
+            textureContext.fillText("Julian: " + JT, 20, 70);
 
             //texture1 = new THREE.Texture(textureCanvas);
             texture1.needsUpdate = true;
@@ -369,6 +383,11 @@
             const aspectRatio = container.width/container.height;
             meshText.position.set(0 , 0.90, 0.5 );
             meshText.scale.set(1.6/aspectRatio, 1.0);
+
+            lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
+            sunMesh.position.x = (lonlat.lon) / 180.0;
+            sunMesh.position.y = (lonlat.lat) / 90.0;
+            sunMesh.scale.set(0.025,0.025*aspectRatio,0.1);
 
             console.log(window.width);
         }
