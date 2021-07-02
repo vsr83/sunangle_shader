@@ -253,8 +253,8 @@ function init()
     displayFolder.add(guiControls, 'enableGrid').onChange(requestFrame);
 
     let locationFolder = gui.addFolder('Location');
-    let locLatControl = locationFolder.add(guiControls, 'locationLat', -90, 90, 0.01).onChange(requestFrame);
-    let locLonControl = locationFolder.add(guiControls, 'locationLon', -180, 180, 0.01).onChange(requestFrame);
+    let locLatControl = locationFolder.add(guiControls, 'locationLat', -90, 90, 0.01).onChange(requestFrameWithSun);
+    let locLonControl = locationFolder.add(guiControls, 'locationLon', -180, 180, 0.01).onChange(requestFrameWithSun);
 
     let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrameWithSun);
     let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrameWithSun);
@@ -339,14 +339,15 @@ function updateSunriseSet(today, sunAltitude, JD, JT)
     let jtStep = 1e-5;
     sunriseTime = null;
     sunsetTime = null;
+    let sunAngularRadius = 0.265;
 
-    if (altitude < 0.0)
+    if (altitude < 0)
     {
         for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
         {
             var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
             let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
-            if (altFuture >= 0.0)
+            if (altFuture >= -sunAngularRadius)
             {
                 let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
                 sunriseTime = new Date(today.getTime() + deltaMils);
@@ -357,7 +358,7 @@ function updateSunriseSet(today, sunAltitude, JD, JT)
         {
             var eqCoords = sunAltitude.computeEquitorial(JT - deltaJt);
             let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
-            if (altPast >= 0.0)
+            if (altPast >= -sunAngularRadius)
             {
                 let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
                 sunsetTime = new Date(today.getTime() + deltaMils);
@@ -372,7 +373,7 @@ function updateSunriseSet(today, sunAltitude, JD, JT)
             var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
             let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
         
-            if (altFuture <= 0.0)
+            if (altFuture <= -sunAngularRadius)
             {
                 let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
                 sunsetTime = new Date(today.getTime()  + deltaMils);
@@ -384,7 +385,7 @@ function updateSunriseSet(today, sunAltitude, JD, JT)
             var eqCoords = sunAltitude.computeEquitorial(JT -deltaJt);
             let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
             
-            if (altPast <= 0.0)
+            if (altPast <= -sunAngularRadius)
             {
                 let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
                 sunriseTime = new Date(today.getTime() + deltaMils);
