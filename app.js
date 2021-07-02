@@ -141,6 +141,10 @@ var gl = canvasGl.getContext("webgl2");
 var program = null;
 var interval = null;
 
+var updateSun = true;
+var sunriseTime = null;
+var sunsetTime = null;
+
 //init();
 //animate();
 
@@ -236,6 +240,14 @@ function init()
         this.showSunLongitude = true;
     }
 
+    if (navigator.geolocation)
+    {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            guiControls.locationLon = position.coords.longitude;
+            guiControls.locationLat = position.coords.latitude;
+        });
+    }
+
     gui = new dat.GUI();
     let displayFolder = gui.addFolder('Display');
     displayFolder.add(guiControls, 'enableGrid').onChange(requestFrame);
@@ -244,15 +256,15 @@ function init()
     let locLatControl = locationFolder.add(guiControls, 'locationLat', -90, 90, 0.01).onChange(requestFrame);
     let locLonControl = locationFolder.add(guiControls, 'locationLon', -180, 180, 0.01).onChange(requestFrame);
 
-    let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrame);
-    let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrame);
+    let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrameWithSun);
+    let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrameWithSun);
     displayFolder.add(guiControls, 'enableSun').onChange(requestFrame());
     displayFolder.add(guiControls, 'enableLocation').onChange(requestFrame());
     
     let deltaFolder = gui.addFolder('DeltaTime');
-    let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrame);
-    let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrame);
-    let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrame);
+    let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrameWithSun);
+    let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrameWithSun);
+    let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrameWithSun);
 
     let textFolder = gui.addFolder('Caption');
     textFolder.add(guiControls, 'showLocal').onChange(requestFrame);
@@ -280,7 +292,7 @@ function init()
     {
         guiControls.locationLon = xToLon(event.pageX);
         guiControls.locationLat = yToLat(event.pageY);
-        requestFrame();
+        requestFrameWithSun();
     });
 
     requestFrame();
@@ -289,6 +301,12 @@ function init()
 
 function requestFrame() 
 {
+    requestAnimationFrame(update);
+}
+
+function requestFrameWithSun() 
+{
+    updateSun = true;
     requestAnimationFrame(update);
 }
 
@@ -311,6 +329,69 @@ function limitAngle(rad)
         rad = rad % interval;
     }
     return rad;
+}
+
+function updateSunriseSet(today, sunAltitude, JD, JT)
+{
+    var eqCoords = sunAltitude.computeEquitorial(JT);
+    let altitude = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT, guiControls.locationLon, guiControls.locationLat);
+
+    let jtStep = 1e-5;
+    sunriseTime = null;
+    sunsetTime = null;
+
+    if (altitude < 0.0)
+    {
+        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+        {
+            var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
+            let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
+            if (altFuture >= 0.0)
+            {
+                let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
+                sunriseTime = new Date(today.getTime() + deltaMils);
+                break;
+            }
+        }
+        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+        {
+            var eqCoords = sunAltitude.computeEquitorial(JT - deltaJt);
+            let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
+            if (altPast >= 0.0)
+            {
+                let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
+                sunsetTime = new Date(today.getTime() + deltaMils);
+                break;
+            }
+        }
+    }
+    else
+    {
+        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+        {
+            var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
+            let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
+        
+            if (altFuture <= 0.0)
+            {
+                let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
+                sunsetTime = new Date(today.getTime()  + deltaMils);
+                break;
+            }
+        }
+        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+        {
+            var eqCoords = sunAltitude.computeEquitorial(JT -deltaJt);
+            let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
+            
+            if (altPast <= 0.0)
+            {
+                let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
+                sunriseTime = new Date(today.getTime() + deltaMils);
+                break;
+            }
+        }
+    }
 }
 
 function drawSun(sunAltitude, rA, decl, JD, JT)
@@ -359,6 +440,18 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
         }
     }
     contextJs.stroke();
+}
+
+function getTimeString(date)
+{
+    if (date == null)
+    {
+        return "NA";
+    }
+
+    return ("0" + date.getHours()).slice(-2) + ":" + 
+           ("0" + date.getMinutes()).slice(-2) + "." + 
+           ("0" + date.getSeconds()).slice(-2);
 }
 
 function drawGrid()
@@ -567,6 +660,12 @@ function update()
 
     dateText.innerHTML = "<p>" + caption + "</p>";
 
+    if (updateSun)
+    {
+       updateSunriseSet(today, sunAltitude, JD, JT);   
+       updateSun = false;
+    }
+
     if (guiControls.enableGrid)
     {
         drawGrid();
@@ -588,13 +687,16 @@ function update()
 
         contextJs.stroke();
 
+
         contextJs.font = "12px Arial";
         contextJs.fillStyle = "#ffff00";
     
         let caption = "Location: " + guiControls.locationLat.toFixed(2).toString() + "° " + 
             guiControls.locationLon.toFixed(2).toString() + "°";
-        contextJs.fillText(caption, x+10, y-12);
-        contextJs.fillText("Sun Altitude: " + altitude.toFixed(3) + "°", x+10, y);
+        contextJs.fillText(caption, x+10, y-36);
+        contextJs.fillText("Altitude: " + altitude.toFixed(3) + "°", x+10, y-24);
+        contextJs.fillText("Rise: " + getTimeString(sunriseTime), x+10, y-12);
+        contextJs.fillText("Set: " + getTimeString(sunsetTime), x+ 10, y);
     }
 
     if (interval == null)
