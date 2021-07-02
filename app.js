@@ -264,7 +264,14 @@ function init()
     let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrameWithSun);
     let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrameWithSun);
     let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrameWithSun);
-
+    deltaFolder.add({reset:function()
+        {
+            dayControl.setValue(0);
+            minuteControl.setValue(0);
+            hourControl.setValue(0);
+            requestFrameWithSun();
+        }}, 'reset');
+    
     let textFolder = gui.addFolder('Caption');
     textFolder.add(guiControls, 'showLocal').onChange(requestFrame);
     textFolder.add(guiControls, 'showUtc').onChange(requestFrame);
