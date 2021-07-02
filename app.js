@@ -338,7 +338,7 @@ function updateSunriseSet(today, sunAltitude, JD, JT)
     var eqCoords = sunAltitude.computeEquitorial(JT);
     let altitude = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT, guiControls.locationLon, guiControls.locationLat);
 
-    let jtStep = 1e-5;
+    let jtStep = 1e-4;
     sunriseTime = null;
     sunsetTime = null;
     let sunAngularRadius = 0.265;
