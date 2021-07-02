@@ -1,11 +1,8 @@
-var container;
 var camera, scene, renderer;
 var uniforms;
 
 var guiControls = null;
 var gui = null;
-var grid = null;
-var texture1 = null;
 
 var vertexShaderSource = `#version 300 es
 
@@ -157,6 +154,17 @@ function latToY(lat)
     return canvasJs.height * ((-lat + 90.0) / 180.0);
 }
 
+function xToLon(x)
+{
+    return (360.0 * (x - canvasJs.width / 2)) / canvasJs.width;
+}
+
+function yToLat(y)
+{
+    return -(180.0 * (y - canvasJs.height / 2)) / canvasJs.height;
+}
+
+
 imageDay.onload = function() 
 {
     numLoaded++;
@@ -208,34 +216,54 @@ function init()
     guiControls = new function()
     {
         //this.preset = "Start";
-        this.enableGrid = false;
+        this.enableGrid = true;
+        this.locationLon = 24.66;
+        this.locationLat = 60.21;
         this.gridLonResolution = 30;
-        this.gridLatResolution = 30;
-        this.enableSun = false;
+        this.gridLatResolution = 30;        
+        this.enableSun = true;
+        this.enableLocation = true;
         this.displayTwilight = true;
         this.deltaDays = 0;
         this.deltaHours = 0;
         this.deltaMins = 0;
+        this.showLocal = true;
+        this.showUtc = true;
+        this.showJulian = true;
+        this.showRa = true;
+        this.showDecl = true;
+        this.showSunLatitude = true;
+        this.showSunLongitude = true;
     }
 
     gui = new dat.GUI();
     let displayFolder = gui.addFolder('Display');
-    displayFolder.add(guiControls, 'enableGrid')
-    .onChange(function() {
-        requestAnimationFrame(update);
-    });
+    displayFolder.add(guiControls, 'enableGrid').onChange(requestFrame);
+
+    let locationFolder = gui.addFolder('Location');
+    let locLatControl = locationFolder.add(guiControls, 'locationLat', -90, 90, 0.01).onChange(requestFrame);
+    let locLonControl = locationFolder.add(guiControls, 'locationLon', -180, 180, 0.01).onChange(requestFrame);
 
     let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrame);
     let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrame);
     displayFolder.add(guiControls, 'enableSun').onChange(requestFrame());
+    displayFolder.add(guiControls, 'enableLocation').onChange(requestFrame());
     
     let deltaFolder = gui.addFolder('DeltaTime');
     let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrame);
     let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrame);
     let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrame);
 
-    container = document.getElementById('container');
+    let textFolder = gui.addFolder('Caption');
+    textFolder.add(guiControls, 'showLocal').onChange(requestFrame);
+    textFolder.add(guiControls, 'showUtc').onChange(requestFrame);
+    textFolder.add(guiControls, 'showJulian').onChange(requestFrame);
+    textFolder.add(guiControls, 'showRa').onChange(requestFrame);
+    textFolder.add(guiControls, 'showDecl').onChange(requestFrame);
+    textFolder.add(guiControls, 'showSunLongitude').onChange(requestFrame);
+    textFolder.add(guiControls, 'showSunLatitude').onChange(requestFrame);
 
+    
     window.addEventListener('resize', update, false);
 
 
@@ -247,6 +275,13 @@ function init()
     }
 
     */
+
+    canvasJs.addEventListener('click', function(event)
+    {
+        guiControls.locationLon = xToLon(event.pageX);
+        guiControls.locationLat = yToLat(event.pageY);
+        requestFrame();
+    });
 
     requestFrame();
 }
@@ -282,19 +317,37 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
 {
     lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
 
+
+    let x = lonToX(lonlat.lon);
+    let y = latToY(lonlat.lat);
+
     contextJs.beginPath();
-    contextJs.arc(lonToX(lonlat.lon), latToY(lonlat.lat), 10, 0, Math.PI * 2);
+    contextJs.arc(x, y, 10, 0, Math.PI * 2);
     contextJs.fillStyle = "#ffff00";
     contextJs.fill();
 
     contextJs.beginPath();
     contextJs.strokeStyle = '#ffff00';
+    contextJs.font = "12px Arial";
+    contextJs.fillStyle = "#ffff00";
+
+    let caption = lonlat.lat.toFixed(2).toString() + "° " + lonlat.lon.toFixed(2).toString() + "°";
+    let textWidth = contextJs.measureText(caption).width;
+
+    let captionShift =  x + 10 + textWidth - canvasJs.width;
+    if (captionShift < 0)
+    {
+        captionShift = 0;
+    }
+    contextJs.fillText(caption, x+10 - captionShift, y-10);
+
+
     for (jdDelta = -1.0; jdDelta < 1.0; jdDelta += 0.01)
     {
         lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT + jdDelta);
 
-        var x = lonToX(lonlat.lon);
-        var y = latToY(lonlat.lat);
+        let x = lonToX(lonlat.lon);
+        let y = latToY(lonlat.lat);
 
         if (jdDelta == -1.0)
         {
@@ -389,10 +442,7 @@ function update()
         interval = null;
     }
 
-    console.log("update");
-
     // Adjust the canvas height according to the body size and the height of the time label.
-    var container = document.getElementById("container");
     var body = document.getElementsByTagName('body')[0];
 
     canvasGL.width = document.documentElement.clientWidth;
@@ -478,11 +528,44 @@ function update()
 
     /////////////////////////////////////////////////////
 
-    var dateText = document.getElementById('dateText');
-    dateText.innerHTML = "<p>"
-    + "Local: " + today.toString() + "<br>"
-    + "UTC: " + today.toUTCString() + "<br>"
-    + "Julian: " + JT.toString() + "</p>";
+    let dateText = document.getElementById('dateText');
+
+    let caption = "";
+    lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
+    let altitude = sunAltitude.computeAltitude(rA, decl, JD, JT, guiControls.locationLon, guiControls.locationLat);
+
+    if (guiControls.showLocal)
+    {
+        caption = caption + "Local: " + today.toString() + "<br>";
+    }
+    if (guiControls.showUtc)
+    {
+        caption = caption + "UTC: " + today.toUTCString() + "<br>";
+    } 
+    if (guiControls.showJulian)
+    {
+        caption = caption + "Julian: " + JT.toString() + "<br>";
+    }
+    if (guiControls.showRa)
+    {
+        let raTime = Coordinates.deg2Time(Coordinates.rad2Deg(rA));
+        caption = caption + "RA: " + raTime.h + "h " + raTime.m + "m " + raTime.s + "s (" +
+                Coordinates.rad2Deg(rA).toFixed(5) + "&deg;) <br>";
+    }
+    if (guiControls.showDecl)
+    {
+        caption = caption + "Declination: " + Coordinates.rad2Deg(decl).toFixed(5) + "&deg; <br>";
+    }
+    if (guiControls.showSunLongitude)
+    {
+        caption = caption + "Sun Longitude: " + lonlat.lon.toFixed(5) + "&deg; <br>";
+    }
+    if (guiControls.showSunLatitude)
+    {
+        caption = caption + "Sun Latitude: " + lonlat.lat.toFixed(5) + "&deg; <br>";
+    }
+
+    dateText.innerHTML = "<p>" + caption + "</p>";
 
     if (guiControls.enableGrid)
     {
@@ -492,6 +575,28 @@ function update()
     {
         drawSun(sunAltitude, rA, decl, JD, JT);
     }
+    if (guiControls.enableLocation)
+    {
+        let x = lonToX(guiControls.locationLon);
+        let y = latToY(guiControls.locationLat);
+        contextJs.beginPath();
+        contextJs.fillStyle = "#ffff00";
+        contextJs.moveTo(x, y - 5);
+        contextJs.lineTo(x, y + 5);
+        contextJs.moveTo(x - 5, y);
+        contextJs.lineTo(x + 5, y);
+
+        contextJs.stroke();
+
+        contextJs.font = "12px Arial";
+        contextJs.fillStyle = "#ffff00";
+    
+        let caption = "Location: " + guiControls.locationLat.toFixed(2).toString() + "° " + 
+            guiControls.locationLon.toFixed(2).toString() + "°";
+        contextJs.fillText(caption, x+10, y-12);
+        contextJs.fillText("Sun Altitude: " + altitude.toFixed(3) + "°", x+10, y);
+    }
+
     if (interval == null)
     {
         interval = setInterval(function() {requestAnimationFrame(update);}, 100);
