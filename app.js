@@ -240,14 +240,6 @@ function init()
         this.showSunLongitude = true;
     }
 
-    if (navigator.geolocation)
-    {
-        navigator.geolocation.getCurrentPosition(function(position) {
-            guiControls.locationLon = position.coords.longitude;
-            guiControls.locationLat = position.coords.latitude;
-        });
-    }
-
     gui = new dat.GUI();
     let displayFolder = gui.addFolder('Display');
     displayFolder.add(guiControls, 'enableGrid').onChange(requestFrame);
@@ -255,6 +247,13 @@ function init()
     let locationFolder = gui.addFolder('Location');
     let locLatControl = locationFolder.add(guiControls, 'locationLat', -90, 90, 0.01).onChange(requestFrameWithSun);
     let locLonControl = locationFolder.add(guiControls, 'locationLon', -180, 180, 0.01).onChange(requestFrameWithSun);
+
+    locationFolder.add({fromGps:function()
+    {
+        tryUpdateGps();
+        requestFrameWithSun();
+    }}, 'fromGps');
+
 
     let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrameWithSun);
     let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrameWithSun);
@@ -279,21 +278,13 @@ function init()
     window.addEventListener('resize', update, false);
 
 
-    /*
-    document.onmousemove = function(e) 
-    {
-        uniforms.u_mouse.value.x = e.pageX;
-        uniforms.u_mouse.value.y = e.pageY;
-    }
-
-    */
-
     canvasJs.addEventListener('click', function(event)
     {
         guiControls.locationLon = xToLon(event.pageX);
         guiControls.locationLat = yToLat(event.pageY);
         requestFrameWithSun();
     });
+    tryUpdateGps();
 
     requestFrame();
 }
@@ -308,6 +299,17 @@ function requestFrameWithSun()
 {
     updateSun = true;
     requestAnimationFrame(update);
+}
+
+function tryUpdateGps()
+{
+    if (navigator.geolocation)
+    {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            guiControls.locationLon = position.coords.longitude;
+            guiControls.locationLat = position.coords.latitude;
+        });
+    }    
 }
 
 /**
