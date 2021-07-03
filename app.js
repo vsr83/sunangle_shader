@@ -1,9 +1,3 @@
-var camera, scene, renderer;
-var uniforms;
-
-var guiControls = null;
-var gui = null;
-
 var vertexShaderSource = `#version 300 es
 
 // an attribute is an input (in) to a vertex shader.
@@ -124,51 +118,43 @@ void main()
 }
 `;
 
+// Number of images loaded. Must reach two before initialization is performed.
 var numLoaded = 0;
-var initialized = false;
 
+// Textures.
 var imageDay = new Image();
 var imageNight = new Image();
 imageDay.src = "textures/2k_earth_daymap.jpg"; 
 imageNight.src = "textures/2k_earth_nightmap.jpg";
 
+// 2d and WebGL canvases stacked top of each other.
 var canvasJs = document.getElementById("canvasJS");
 var contextJs = canvasJs.getContext("2d");
-
 var canvasGl = document.getElementById("canvasGL");
 var gl = canvasGl.getContext("webgl2");
 
+// DatGUI controls.
+var guiControls = null;
+var gui = null;
+
+// Compiled shaders.
 var program = null;
+
+// Interval used for redrawing the visualization regularly.
 var interval = null;
 
+// Flag indicating whether sunrise and sunset times should be updated.
 var updateSun = true;
+
+// The most recent sunrise and sunset times.
 var sunriseTime = null;
 var sunsetTime = null;
 
-//init();
-//animate();
+// Flag indicating whether drawing of a frame is on-going. Used to block accumulation
+// of requests from UI.
+var drawing = false;
 
-function lonToX(lon)
-{
-    return canvasJs.width * ((lon + 180.0) / 360.0);
-}
-
-function latToY(lat)
-{
-    return canvasJs.height * ((-lat + 90.0) / 180.0);
-}
-
-function xToLon(x)
-{
-    return (360.0 * (x - canvasJs.width / 2)) / canvasJs.width;
-}
-
-function yToLat(y)
-{
-    return -(180.0 * (y - canvasJs.height / 2)) / canvasJs.height;
-}
-
-
+// Initialize after images have been loaded.
 imageDay.onload = function() 
 {
     numLoaded++;
@@ -187,6 +173,13 @@ imageNight.onload = function()
     }
 };
 
+/**
+ * Load texture.
+ * 
+ * @param {Number} index 
+ * @param {Image} image The image to be loaded.
+ * @param {WebGLUniformLocation} imageLocation Uniform location for the texture.
+ */
 function loadTexture(index, image, imageLocation)
 {
     // Create a texture.
@@ -200,23 +193,15 @@ function loadTexture(index, image, imageLocation)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    // Upload the image into the texture.
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.uniform1i(imageLocation, index);
 }
 
-function init()
+/**
+ * Create GUI controls.
+ */
+function createGui()
 {
-    // setup GLSL program
-    program = webglUtils.createProgramFromSources(gl, [vertexShaderSource, fragmentShaderSource]);
-    gl.useProgram(program);
-
-    var imageLocationDay = gl.getUniformLocation(program, "u_imageDay");
-    var imageLocationNight = gl.getUniformLocation(program, "u_imageNight");
-
-    loadTexture(0, imageDay, imageLocationDay);
-    loadTexture(1, imageNight, imageLocationNight);
-  
     guiControls = new function()
     {
         //this.preset = "Start";
@@ -280,34 +265,69 @@ function init()
     textFolder.add(guiControls, 'showDecl').onChange(requestFrame);
     textFolder.add(guiControls, 'showSunLongitude').onChange(requestFrame);
     textFolder.add(guiControls, 'showSunLatitude').onChange(requestFrame);
+}
 
+/**
+ * Initialize.
+ */
+function init()
+{
+    program = webglUtils.createProgramFromSources(gl, [vertexShaderSource, fragmentShaderSource]);
+    gl.useProgram(program);
+
+    var imageLocationDay = gl.getUniformLocation(program, "u_imageDay");
+    var imageLocationNight = gl.getUniformLocation(program, "u_imageNight");
+
+    loadTexture(0, imageDay, imageLocationDay);
+    loadTexture(1, imageNight, imageLocationNight);
+  
+    createGui();
     
-    window.addEventListener('resize', update, false);
+    window.addEventListener('resize', requestFrame, false);
 
-
+    // Update location when the map is clicked.
     canvasJs.addEventListener('click', function(event)
     {
         guiControls.locationLon = xToLon(event.pageX);
         guiControls.locationLat = yToLat(event.pageY);
         requestFrameWithSun();
     });
+
+    // Try to obtain location with the GPS.
     tryUpdateGps();
 
-    requestFrame();
+    // Draw the first frame.
+    requestFrameWithSun();
 }
 
-
+/**
+ * Request frame if no drawing is on-going.
+ */
 function requestFrame() 
 {
+    // If drawing is on-going, skip. This is an attempt to avoid the situation, where 
+    // drawing requests accumulate faster than can be processed due to UI callbacks.
+    if (drawing)
+    {
+        return;
+    }
+
+    drawing = true;
     requestAnimationFrame(update);
 }
 
+/**
+ * Request frame with recomputation of the sunrise and sunset times.
+ */
 function requestFrameWithSun() 
 {
     updateSun = true;
-    requestAnimationFrame(update);
+    requestFrame();
 }
 
+/**
+ * Try to update location from GPS.
+ */
 function tryUpdateGps()
 {
     if (navigator.geolocation)
@@ -322,7 +342,7 @@ function tryUpdateGps()
 /**
  * Map angle to the interval [0, 2*pi].
  *  
- * @param {*} rad 
+ * @param {Number} rad 
  *     The angle (in radians).
  * @returns The mapped angle.
  */
@@ -340,78 +360,65 @@ function limitAngle(rad)
     return rad;
 }
 
+/**
+ * Recompute sunrise and sunset times.
+ * 
+ * @param {Date} today Current time.
+ * @param {SunAltitude} sunAltitude SunAltitude object for the computation.
+ * @param {Number} JD Julian Date.
+ * @param {Number} JT Julian Time.
+ */
 function updateSunriseSet(today, sunAltitude, JD, JT)
 {
-    var eqCoords = sunAltitude.computeEquitorial(JT);
-    let altitude = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT, guiControls.locationLon, guiControls.locationLat);
-
     let jtStep = 1e-4;
-    sunriseTime = null;
-    sunsetTime = null;
-    let sunAngularRadius = 0.265;
-
-    if (altitude < 0)
-    {
-        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
-        {
-            var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
-            let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
-            if (altFuture >= -sunAngularRadius)
-            {
-                let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
-                sunriseTime = new Date(today.getTime() + deltaMils);
-                break;
-            }
-        }
-        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
-        {
-            var eqCoords = sunAltitude.computeEquitorial(JT - deltaJt);
-            let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
-            if (altPast >= -sunAngularRadius)
-            {
-                let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
-                sunsetTime = new Date(today.getTime() + deltaMils);
-                break;
-            }
-        }
-    }
-    else
-    {
-        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
-        {
-            var eqCoords = sunAltitude.computeEquitorial(JT + deltaJt);
-            let altFuture = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, guiControls.locationLon, guiControls.locationLat);
-        
-            if (altFuture <= -sunAngularRadius)
-            {
-                let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
-                sunsetTime = new Date(today.getTime()  + deltaMils);
-                break;
-            }
-        }
-        for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
-        {
-            var eqCoords = sunAltitude.computeEquitorial(JT -deltaJt);
-            let altPast = sunAltitude.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, guiControls.locationLon, guiControls.locationLat);
-            
-            if (altPast <= -sunAngularRadius)
-            {
-                let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
-                sunriseTime = new Date(today.getTime() + deltaMils);
-                break;
-            }
-        }
-    }
+    var foo = sunAltitude.computeSunriseSet(today, JD, JT, jtStep, guiControls.locationLon, guiControls.locationLat);
+    sunriseTime = foo.rise;
+    sunsetTime = foo.set;
 }
 
+function lonToX(lon)
+{
+    return canvasJs.width * ((lon + 180.0) / 360.0);
+}
+
+function latToY(lat)
+{
+    return canvasJs.height * ((-lat + 90.0) / 180.0);
+}
+
+function xToLon(x)
+{
+    return (360.0 * (x - canvasJs.width / 2)) / canvasJs.width;
+}
+
+function yToLat(y)
+{
+    return -(180.0 * (y - canvasJs.height / 2)) / canvasJs.height;
+}
+
+/**
+ * Draw Sun location and route.
+ * 
+ * @param {SunAltitude} sunAltitude 
+ *     The SunAltitude object used for the computation.
+ * @param {Number} rA 
+ *     The right ascension of the Sun at JT.
+ * @param {Number} decl 
+ *     The declination of the Sun at JT.
+ * @param {Number} JD 
+ *     The Julian Day.
+ * @param {Number} JT 
+ *     The Julian Time.
+ */
 function drawSun(sunAltitude, rA, decl, JD, JT)
 {
     lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT);
 
-
+    // Sun location on the Canvas.
     let x = lonToX(lonlat.lon);
     let y = latToY(lonlat.lat);
 
+    // Draw Sun location.
     contextJs.beginPath();
     contextJs.arc(x, y, 10, 0, Math.PI * 2);
     contextJs.fillStyle = "#ffff00";
@@ -422,6 +429,7 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
     contextJs.font = "12px Arial";
     contextJs.fillStyle = "#ffff00";
 
+    // Draw caption.
     let caption = lonlat.lat.toFixed(2).toString() + "° " + lonlat.lon.toFixed(2).toString() + "°";
     let textWidth = contextJs.measureText(caption).width;
 
@@ -432,7 +440,7 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
     }
     contextJs.fillText(caption, x+10 - captionShift, y-10);
 
-
+    // Draw Sun path.
     for (jdDelta = -1.0; jdDelta < 1.0; jdDelta += 0.01)
     {
         lonlat = sunAltitude.computeSunLonLat(rA, decl, JD, JT + jdDelta);
@@ -452,6 +460,12 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
     contextJs.stroke();
 }
 
+/**
+ * Convert date to HH:MM string.
+ * 
+ * @param {Date} date The date.
+ * @returns The string.
+ */
 function getTimeString(date)
 {
     if (date == null)
@@ -460,10 +474,12 @@ function getTimeString(date)
     }
 
     return ("0" + date.getHours()).slice(-2) + ":" + 
-           ("0" + date.getMinutes()).slice(-2) + "." + 
-           ("0" + date.getSeconds()).slice(-2);
+           ("0" + date.getMinutes()).slice(-2);
 }
 
+/**
+ * Draw grid.
+ */
 function drawGrid()
 {
     contextJs.font = "10px Arial";
@@ -535,7 +551,6 @@ function drawGrid()
 
 /**
  * Redraw the map and the contour according to the Sun altitude.
- * 
  */
 function update()
 {
@@ -599,7 +614,7 @@ function update()
     gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
 
 
-    ////
+    // Draw triangles.
     var texCoordBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -711,6 +726,8 @@ function update()
 
     if (interval == null)
     {
-        interval = setInterval(function() {requestAnimationFrame(update);}, 100);
+        interval = setInterval(function() {requestFrame();}, 100);
     }
+
+    drawing = false;
 }

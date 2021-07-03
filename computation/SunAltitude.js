@@ -106,4 +106,80 @@ class SunAltitude
 
         return {lon : lon, lat : lat};
     }
+
+    /**
+     * Recompute sunrise and sunset times by finding first .
+     * 
+     * @param {Date} today Current time.
+     * @param {Number} JD Current Julian Date.
+     * @param {Number} JT Current Julian Time.
+     * @param {Number} jtStep Time step.
+     * @param {Number} lon Longitude in degrees.
+     * @param {Number} lat Latitude in degrees.
+     * @returns The sunrise and sunset times.
+     */
+    computeSunriseSet(today, JD, JT, jtStep, lon, lat)
+    {
+        var eqCoords = this.computeEquitorial(JT);
+        let altitude = this.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT, lon, lat);
+
+        sunriseTime = null;
+        sunsetTime = null;
+        let sunAngularRadius = 0.265;
+
+        if (altitude < 0)
+        {
+            for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+            {
+                var eqCoords = this.computeEquitorial(JT + deltaJt);
+                let altFuture = this.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, lon, lat);
+                if (altFuture >= -sunAngularRadius)
+                {
+                    let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
+                    sunriseTime = new Date(today.getTime() + deltaMils);
+                    break;
+                }
+            }
+            for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+            {
+                var eqCoords = this.computeEquitorial(JT - deltaJt);
+                let altPast = this.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, lon, lat);
+                if (altPast >= -sunAngularRadius)
+                {
+                    let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
+                    sunsetTime = new Date(today.getTime() + deltaMils);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+            {
+                var eqCoords = this.computeEquitorial(JT + deltaJt);
+                let altFuture = this.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT + deltaJt, lon, lat);
+            
+                if (altFuture <= -sunAngularRadius)
+                {
+                    let deltaMils = Math.floor(24 * 3600 * 1000 * deltaJt);
+                    sunsetTime = new Date(today.getTime()  + deltaMils);
+                    break;
+                }
+            }
+            for (let deltaJt = 0; deltaJt < 1.0; deltaJt += jtStep)
+            {
+                var eqCoords = this.computeEquitorial(JT -deltaJt);
+                let altPast = this.computeAltitude(eqCoords.rA, eqCoords.decl, JD, JT - deltaJt, lon, lat);
+                
+                if (altPast <= -sunAngularRadius)
+                {
+                    let deltaMils = Math.floor(-24 * 3600 * 1000 * deltaJt);
+                    sunriseTime = new Date(today.getTime() + deltaMils);
+                    break;
+                }
+            }
+        }
+        return {rise : sunriseTime, set : sunsetTime};
+    }
+
 }
