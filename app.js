@@ -267,12 +267,43 @@ function createGui()
     textFolder.add(guiControls, 'showSunLatitude').onChange(requestFrame);
 }
 
+function compileProgram()
+{
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vertexShader, vertexShaderSource);
+    gl.compileShader(vertexShader);
+
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, fragmentShaderSource);
+    gl.compileShader(fragmentShader);
+
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS))
+    {
+        console.log("compile");
+    }
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    
+    gl.linkProgram(program);
+    // Check the link status
+    const linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if (!linked) 
+    {
+        // error.
+        gl.deleteProgram(program);
+    }
+
+    return program;
+}
+
 /**
  * Initialize.
  */
 function init()
 {
-    program = webglUtils.createProgramFromSources(gl, [vertexShaderSource, fragmentShaderSource]);
+    program = compileProgram();
     gl.useProgram(program);
 
     var imageLocationDay = gl.getUniformLocation(program, "u_imageDay");
