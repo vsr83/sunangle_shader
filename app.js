@@ -14,11 +14,8 @@ out vec2 v_texCoord;
 // all shaders have a main function
 void main() {
 
-  // convert the position from pixels to 0.0 to 1.0
-  vec2 zeroToOne = a_position / u_resolution;
-
   // convert from 0->1 to 0->2
-  vec2 zeroToTwo = zeroToOne * 2.0;
+  vec2 zeroToTwo = a_position * 2.0;
 
   // convert from 0->2 to -1->+1 (clipspace)
   vec2 clipSpace = zeroToTwo - 1.0;
@@ -267,6 +264,11 @@ function createGui()
     textFolder.add(guiControls, 'showSunLatitude').onChange(requestFrame);
 }
 
+/**
+ * Compile the WebGL program.
+ * 
+ * @returns The compiled program.
+ */
 function compileProgram()
 {
     const vertexShader = gl.createShader(gl.VERTEX_SHADER);
@@ -326,6 +328,44 @@ function init()
 
     // Try to obtain location with the GPS.
     tryUpdateGps();
+
+    // look up where the vertex data needs to go.
+    var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+    var texCoordAttributeLocation = gl.getAttribLocation(program, "a_texCoord");
+
+    var vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    var positionBuffer = gl.createBuffer();
+    gl.enableVertexAttribArray(positionAttributeLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+
+    // Load Texture and vertex coordinate buffers. 
+    var texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0.0,  0.0,
+        1.0,  0.0,
+        0.0,  1.0,
+        0.0,  1.0,
+        1.0,  0.0,
+        1.0,  1.0,
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(texCoordAttributeLocation);
+    gl.vertexAttribPointer(texCoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+  
+    gl.bindVertexArray(vao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        0.0, 1.0,
+        1.0, 0.0 ,
+        1.0, 1.0,
+    ]), gl.STATIC_DRAW);
 
     // Draw the first frame.
     requestFrameWithSun();
@@ -623,56 +663,24 @@ function update()
     //console.log("Right Ascension : " + Coordinates.rad2Deg(rA) + " deg ");
     //console.log("Declination     : " + Coordinates.rad2Deg(decl) + " deg");
     
-    // look up where the vertex data needs to go.
-    var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
-    var texCoordAttributeLocation = gl.getAttribLocation(program, "a_texCoord");
-
-    // lookup uniforms
+    // Update computational parameter uniforms.
     var raLocation = gl.getUniformLocation(program, "u_rA");
     var declLocation = gl.getUniformLocation(program, "u_decl");
     var lstLocation = gl.getUniformLocation(program, "u_LST");
-    var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
 
     gl.uniform1f(raLocation, rA);
     gl.uniform1f(declLocation, decl);
     gl.uniform1f(lstLocation, LST);
 
-    var vao = gl.createVertexArray();
-    gl.bindVertexArray(vao);
-    var positionBuffer = gl.createBuffer();
-    gl.enableVertexAttribArray(positionAttributeLocation);
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
-
-
-    // Draw triangles.
-    var texCoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        0.0,  0.0,
-        1.0,  0.0,
-        0.0,  1.0,
-        0.0,  1.0,
-        1.0,  0.0,
-        1.0,  1.0,
-    ]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(texCoordAttributeLocation);
-    gl.vertexAttribPointer(texCoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
-  
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.bindVertexArray(vao);
+
+    // Update canvas size uniform.
+    var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
     gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        0, 0,
-        gl.canvas.width, 0,
-        0, gl.canvas.height,
-        0, gl.canvas.height,
-        gl.canvas.width, 0 ,
-        gl.canvas.width, gl.canvas.height,
-     ]), gl.STATIC_DRAW);
-     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
 
 
     /////////////////////////////////////////////////////
