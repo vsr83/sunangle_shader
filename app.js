@@ -208,6 +208,7 @@ function createGui()
         this.gridLonResolution = 30;
         this.gridLatResolution = 30;        
         this.enableSun = true;
+        this.enableMoon = true;
         this.enableLocation = true;
         this.displayTwilight = true;
         this.deltaDays = 0;
@@ -240,6 +241,7 @@ function createGui()
     let lonControl = displayFolder.add(guiControls, 'gridLonResolution', 1, 180, 1).onChange(requestFrameWithSun);
     let latControl = displayFolder.add(guiControls, 'gridLatResolution', 1, 180, 1).onChange(requestFrameWithSun);
     displayFolder.add(guiControls, 'enableSun').onChange(requestFrame());
+    displayFolder.add(guiControls, 'enableMoon').onChange(requestFrame());
     displayFolder.add(guiControls, 'enableLocation').onChange(requestFrame());
     
     let deltaFolder = gui.addFolder('DeltaTime');
@@ -532,6 +534,71 @@ function drawSun(sunAltitude, rA, decl, JD, JT)
 }
 
 /**
+ * Draw Moon location and route.
+ * 
+ * @param {MoonAltitude} moonAltitude 
+ *     The SunAltitude object used for the computation.
+ * @param {Number} rA 
+ *     The right ascension of the Sun at JT.
+ * @param {Number} decl 
+ *     The declination of the Sun at JT.
+ * @param {Number} JD 
+ *     The Julian Day.
+ * @param {Number} JT 
+ *     The Julian Time.
+ */
+ function drawMoon(moonAltitude, rA, decl, JD, JT)
+ {
+     lonlat = moonAltitude.computeMoonLonLat(rA, decl, JD, JT);
+ 
+     // Sun location on the Canvas.
+     let x = lonToX(lonlat.lon);
+     let y = latToY(lonlat.lat);
+ 
+     // Draw Sun location.
+     contextJs.beginPath();
+     contextJs.arc(x, y, 10, 0, Math.PI * 2);
+     contextJs.fillStyle = "#aaaaaa";
+     contextJs.fill();
+ 
+     contextJs.beginPath();
+     contextJs.strokeStyle = '#aaaaaa';
+     contextJs.font = "12px Arial";
+     contextJs.fillStyle = "#aaaaaa";
+ 
+     // Draw caption.
+     /*let caption = lonlat.lat.toFixed(2).toString() + "° " + lonlat.lon.toFixed(2).toString() + "°";
+     let textWidth = contextJs.measureText(caption).width;
+ 
+     let captionShift =  x + 10 + textWidth - canvasJs.width;
+     if (captionShift < 0)
+     {
+         captionShift = 0;
+     }
+     contextJs.fillText(caption, x+10 - captionShift, y-10);
+     */
+     // Draw Moon path.
+     /*
+     for (jdDelta = -1.0; jdDelta < 1.0; jdDelta += 0.01)
+     {
+         lonlat = moonAltitude.computeMoonLonLat(rA, decl, JD, JT + jdDelta);
+ 
+         let x = lonToX(lonlat.lon);
+         let y = latToY(lonlat.lat);
+ 
+         if (jdDelta == -1.0)
+         {
+             contextJs.moveTo(x, y);
+         }
+         else
+         {
+             contextJs.lineTo(x, y);
+         }
+     }
+     contextJs.stroke();*/
+ }
+ 
+/**
  * Convert date to HH:MM string.
  * 
  * @param {Date} date The date.
@@ -621,6 +688,34 @@ function drawGrid()
 }
 
 /**
+ * Draw location.
+ * 
+ * @param {Number} date The Sun altitude.
+ */
+function drawLocation(altitude)
+{
+    let x = lonToX(guiControls.locationLon);
+    let y = latToY(guiControls.locationLat);
+    contextJs.beginPath();
+    contextJs.fillStyle = "#ffff00";
+    contextJs.moveTo(x, y - 5);
+    contextJs.lineTo(x, y + 5);
+    contextJs.moveTo(x - 5, y);
+    contextJs.lineTo(x + 5, y);
+    contextJs.stroke();
+
+    contextJs.font = "12px Arial";
+    contextJs.fillStyle = "#ffff00";
+
+    let caption = "Location: " + guiControls.locationLat.toFixed(2).toString() + "° " + 
+        guiControls.locationLon.toFixed(2).toString() + "°";
+    contextJs.fillText(caption, x+10, y-36);
+    contextJs.fillText("Altitude: " + altitude.toFixed(3) + "°", x+10, y-24);
+    contextJs.fillText("Rise: " + getTimeString(sunriseTime), x+10, y-12);
+    contextJs.fillText("Set: " + getTimeString(sunsetTime), x+ 10, y);
+}
+
+/**
  * Redraw the map and the contour according to the Sun altitude.
  */
 function update()
@@ -655,6 +750,13 @@ function update()
     var eqCoords = sunAltitude.computeEquitorial(JT);
     var rA = eqCoords.rA;
     var decl = eqCoords.decl;
+
+    // Compute equitorial coordinates of the Moon.
+    var moonAltitude = new MoonAltitude();
+    var eqCoordsMoon = moonAltitude.computeEquitorial(JT);
+    var rAMoon = eqCoordsMoon.rA;
+    var declMoon = eqCoordsMoon.decl;
+
 
     // Compute sidereal time perform modulo to avoid floating point accuracy issues with 32-bit
     // floats in the shader:
@@ -738,29 +840,13 @@ function update()
     {
         drawSun(sunAltitude, rA, decl, JD, JT);
     }
+    if (guiControls.enableMoon)
+    {
+        drawMoon(moonAltitude, rAMoon, declMoon, JD, JT);
+    }
     if (guiControls.enableLocation)
     {
-        let x = lonToX(guiControls.locationLon);
-        let y = latToY(guiControls.locationLat);
-        contextJs.beginPath();
-        contextJs.fillStyle = "#ffff00";
-        contextJs.moveTo(x, y - 5);
-        contextJs.lineTo(x, y + 5);
-        contextJs.moveTo(x - 5, y);
-        contextJs.lineTo(x + 5, y);
-
-        contextJs.stroke();
-
-
-        contextJs.font = "12px Arial";
-        contextJs.fillStyle = "#ffff00";
-    
-        let caption = "Location: " + guiControls.locationLat.toFixed(2).toString() + "° " + 
-            guiControls.locationLon.toFixed(2).toString() + "°";
-        contextJs.fillText(caption, x+10, y-36);
-        contextJs.fillText("Altitude: " + altitude.toFixed(3) + "°", x+10, y-24);
-        contextJs.fillText("Rise: " + getTimeString(sunriseTime), x+10, y-12);
-        contextJs.fillText("Set: " + getTimeString(sunsetTime), x+ 10, y);
+        drawLocation(altitude);
     }
 
     if (interval == null)
