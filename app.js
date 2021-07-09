@@ -836,13 +836,13 @@ function update()
     {
         drawGrid();
     }
-    if (guiControls.enableSun)
-    {
-        drawSun(sunAltitude, rA, decl, JD, JT);
-    }
     if (guiControls.enableMoon)
     {
         drawMoon(moonAltitude, rAMoon, declMoon, JD, JT);
+    }
+    if (guiControls.enableSun)
+    {
+        drawSun(sunAltitude, rA, decl, JD, JT);
     }
     if (guiControls.enableLocation)
     {
