@@ -151,6 +151,9 @@ var sunsetTime = null;
 // of requests from UI.
 var drawing = false;
 
+// Delta time (ms) from configuration of date and time.
+var dateDelta = 0;
+
 // Initialize after images have been loaded.
 imageDay.onload = function() 
 {
@@ -199,6 +202,8 @@ function loadTexture(index, image, imageLocation)
  */
 function createGui()
 {
+    var initDate = new Date();
+
     guiControls = new function()
     {
         //this.preset = "Start";
@@ -221,6 +226,12 @@ function createGui()
         this.showDecl = true;
         this.showSunLatitude = true;
         this.showSunLongitude = true;
+        this.dateYear = initDate.getFullYear();
+        this.dateMonth = initDate.getMonth()+1;
+        this.dateDay = initDate.getDate();
+        this.timeHour = initDate.getHours();
+        this.timeMinute = initDate.getMinutes();
+        this.timeSecond = initDate.getSeconds();
     }
 
     gui = new dat.GUI();
@@ -244,15 +255,31 @@ function createGui()
     displayFolder.add(guiControls, 'enableMoon').onChange(requestFrame());
     displayFolder.add(guiControls, 'enableLocation').onChange(requestFrame());
     
-    let deltaFolder = gui.addFolder('DeltaTime');
-    let dayControl = deltaFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrameWithSun);
-    let hourControl = deltaFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrameWithSun);
-    let minuteControl = deltaFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrameWithSun);
-    deltaFolder.add({reset:function()
+    let timeFolder = gui.addFolder('Time');
+
+    let yearControl = timeFolder.add(guiControls, 'dateYear', 1970, 2050, 1).onChange(configureTime);
+    let monthControl = timeFolder.add(guiControls, 'dateMonth', 1, 12, 1).onChange(configureTime);
+    let dayControl = timeFolder.add(guiControls, 'dateDay', 1, 31, 1).onChange(configureTime);
+    let hourControl = timeFolder.add(guiControls, 'timeHour', 0, 24, 1).onChange(configureTime);
+    let minuteControl = timeFolder.add(guiControls, 'timeMinute', 0, 59, 1).onChange(configureTime);
+    let secondControl = timeFolder.add(guiControls, 'timeSecond', 0, 59, 1).onChange(configureTime);
+
+    let deltaDayControl = timeFolder.add(guiControls, 'deltaDays', -185, 185, 1).onChange(requestFrameWithSun);
+    let deltaHourControl = timeFolder.add(guiControls, 'deltaHours', -12, 12, 1).onChange(requestFrameWithSun);
+    let deltaMinuteControl = timeFolder.add(guiControls, 'deltaMins', -30, 30, 1).onChange(requestFrameWithSun);
+    timeFolder.add({reset:function()
         {
-            dayControl.setValue(0);
-            minuteControl.setValue(0);
-            hourControl.setValue(0);
+            var resetDate = new Date();
+            deltaDayControl.setValue(0);
+            deltaMinuteControl.setValue(0);
+            deltaHourControl.setValue(0);
+            yearControl.setValue(resetDate.getFullYear());
+            monthControl.setValue(resetDate.getMonth()+1);
+            dayControl.setValue(resetDate.getDate());
+            hourControl.setValue(resetDate.getHours());
+            minuteControl.setValue(resetDate.getMinutes());
+            secondControl.setValue(resetDate.getSeconds());
+    
             requestFrameWithSun();
         }}, 'reset');
     
@@ -387,6 +414,18 @@ function requestFrame()
 
     drawing = true;
     requestAnimationFrame(update);
+}
+
+/**
+ * Configure time.
+ */
+function configureTime()
+{
+    var newDate = new Date(guiControls.dateYear, guiControls.dateMonth-1, guiControls.dateDay, 
+        guiControls.timeHour, guiControls.timeMinute, guiControls.timeSecond).getTime();
+
+    var today = new Date().getTime();
+    dateDelta = newDate - today;
 }
 
 /**
@@ -738,7 +777,8 @@ function update()
     var today = new Date(new Date().getTime() 
     + 24 * 3600 * 1000 * guiControls.deltaDays
     + 3600 * 1000 * guiControls.deltaHours
-    + 60 * 1000 * guiControls.deltaMins);
+    + 60 * 1000 * guiControls.deltaMins
+    + dateDelta);
 
     julianTimes = TimeConversions.computeJulianTime(today);
     JD = julianTimes.JD;
